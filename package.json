@@ -1,37 +1,67 @@
 {
   "name": "@johnny0120/opencode-user-predictor",
   "version": "0.1.2",
-  "description": "OpenCode plugin that predicts user responses using a reverse-role LLM agent",
+  "description": "OpenCode plugin that predicts your next message and shows it as ghost text — role-plays as you using your conversation history. /pred-on to enable.",
   "type": "module",
   "main": "src/index.ts",
   "files": [
     "src",
-    "scripts",
     "opencode.json",
     "predictor-profile.json",
     "predictor-profile-zh.json"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "dev": "tsc --watch --noEmit",
-    "test": "vitest run"
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "ci": "npm run lint && npm run typecheck && npm run typecheck:test && npm test",
+    "prepublishOnly": "npm run ci",
+    "prepare": "husky"
   },
   "dependencies": {
     "@opencode-ai/plugin": "^1.17.18"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
+    "eslint": "^10.7.0",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "prettier": "^3.9.5",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.64.0",
     "vitest": "^4.1.10"
   },
   "keywords": [
     "opencode",
     "opencode-plugin",
-    "ai",
-    "predictor"
+    "opencode-extension",
+    "ghost-text",
+    "autocomplete",
+    "text-prediction",
+    "predictive-text",
+    "inline-completion",
+    "ai-completion",
+    "llm",
+    "ai-agent",
+    "role-play",
+    "user-simulation",
+    "developer-tools",
+    "coding-assistant",
+    "cli"
   ],
   "license": "MIT",
   "repository": "github:johnny0120/opencode-user-predictor",
   "publishConfig": {
     "access": "public"
+  },
+  "lint-staged": {
+    "*.{ts,js,cjs,mjs}": "eslint --fix",
+    "*.{ts,js,cjs,mjs,json,md,yml,yaml}": "prettier --write"
   }
 }
