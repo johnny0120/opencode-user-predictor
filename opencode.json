@@ -17,6 +17,10 @@
     "pred-profile": {
       "template": "/pred-profile",
       "description": "Refresh user profile from current session"
+    },
+    "pred-seed": {
+      "template": "/pred-seed $ARGUMENTS",
+      "description": "Seed user corpus from past OpenCode sessions (optional: limit)"
     }
   }
 }
