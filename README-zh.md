@@ -88,8 +88,6 @@ cp predictor-profile-zh.json predictor-profile.json   # 切换中文模式
 
 `/pred-seed` 直接读取本地 OpenCode 历史（`~/.local/share/opencode/opencode.db`），任何安装方式都可用，无需额外工具。编辑 `predictor-profile.json` 自定义行为，重启 OpenCode 生效。
 
-编辑 `predictor-profile.json` 自定义行为。重启 OpenCode 生效。
-
 ## License
 
 MIT

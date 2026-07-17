@@ -2,18 +2,24 @@
 
 OpenCode plugin that predicts what you'll say next — a reverse-role LLM agent that role-plays as you.
 
+> This file is the running project journal. `AGENTS.md` is the operational
+> handbook (commands, constraints, debugging, releasing) — read that first when
+> picking up work; this file records _what_ happened and _why_.
+
 ## Quick Start
 
 ```bash
-# Install
-npm install
-
-# Add to your project's opencode.json:
-# "plugin": ["opencode-user-predictor"]
-
-# Or for local dev:
-# "plugin": ["./src/index.ts"]
+npm install              # install deps
+npm run ci               # lint + typecheck(src) + typecheck(test) + test  (the full gate)
 ```
+
+Load the plugin in a project's `opencode.json`:
+
+```json
+{ "plugin": ["@johnny0120/opencode-user-predictor"] }
+```
+
+Or for local dev: `"plugin": ["./src/index.ts"]`.
 
 ## Usage
 
@@ -23,7 +29,8 @@ npm install
 | `/pred-on message` | Enable + send message to LLM                            |
 | `/pred-off`        | Disable predictions                                     |
 | `/pred-status`     | Show current state                                      |
-| `/pred-profile`    | Build/update user behavior profile from session history |
+| `/pred-profile`    | Build/update user behavior profile from current session |
+| `/pred-seed [N]`   | Seed corpus from past sessions (default 50)             |
 
 After enabling, ghost text appears in the input box after each AI response — press Tab to accept, or keep typing to ignore.
 
@@ -31,12 +38,9 @@ After enabling, ghost text appears in the input box after each AI response — p
 
 The predictor ships with a generic developer profile. To personalize it:
 
-```bash
-# One-time: seed profile from your historical sessions
-bun run scripts/seed-corpus.ts 50
-
-# Then run periodically to accumulate:
-/pred-profile
+```text
+/pred-seed 50      # one-time: seed corpus from past OpenCode sessions (no bun/oh-my-openagent needed)
+/pred-profile      # then run periodically to accumulate from the current session
 ```
 
 The profile captures your thinking patterns (scrutiny, verification instinct, detail orientation) and communication style (brevity, language mixing, action verbs). It persists across sessions in `data/user-corpus.json`.
@@ -52,30 +56,37 @@ session.idle → extractTextMessages() → buildPredictionMessages()
 - Fresh session per prediction (`create → prompt → delete`)
 - Role-flipped conversation as JSON: `{"role":"self"}` (user) / `{"role":"others"}` (AI)
 - Priority on `small_model`, falls back to primary
+- `/pred-*` commands wired in 3 places each (config hook + `chat.message` + `command.execute.before`)
 
-## File sizes
+## Modules
 
-| File                     | Purpose                                                |
-| ------------------------ | ------------------------------------------------------ |
-| `src/index.ts`           | Plugin: hooks, agent, predict, toggle, profile refresh |
-| `src/prompts.ts`         | System prompt + buildPredictionMessages                |
-| `scripts/seed-corpus.ts` | Bootstrap profile from history                         |
+| File               | Purpose                                                                    |
+| ------------------ | -------------------------------------------------------------------------- |
+| `src/index.ts`     | Plugin ENTRY — hooks, `_predictor` agent, predict(), toggle, profile, seed |
+| `src/internals.ts` | State + pure helpers (resolveModel, extractTextMessages). Not an entry.    |
+| `src/seed.ts`      | `seedCorpus()` — reads opencode.db via `bun:sqlite`, pure/testable         |
+| `src/prompts.ts`   | System prompt + buildPredictionMessages                                    |
+| `src/bun.d.ts`     | Ambient Bun + `bun:sqlite` types (tsc under node, no `@types/bun`)         |
+| `test/`            | Integration tests (opencode-start smoke test; skips without the binary)    |
 
 ## Current state
 
-| Feature                                      | Status |
-| -------------------------------------------- | ------ |
-| Prediction engine                            | ✅     |
-| Slash commands (`/pred-on`, etc.)            | ✅     |
-| `_predictor` agent with custom system prompt | ✅     |
-| User profile (behavioral baseline)           | ✅     |
-| Hot-reload profile via `/pred-profile`       | ✅     |
-| Rate limiting (2s interval)                  | ✅     |
-| Toast notifications                          | ✅     |
-| Debug logging (`data/predictor.log`)         | ✅     |
-| `autoSubmitThreshold`                        | ⬜     |
-| Graceful degrade when no model configured    | ⬜     |
-| Configurable via opencode.json options       | ⬜     |
+| Feature                                        | Status |
+| ---------------------------------------------- | ------ |
+| Prediction engine                              | ✅     |
+| Slash commands (`/pred-on`, etc.)              | ✅     |
+| `/pred-seed` (self-contained corpus bootstrap) | ✅     |
+| `_predictor` agent with custom system prompt   | ✅     |
+| User profile (behavioral baseline)             | ✅     |
+| Hot-reload profile via `/pred-profile`         | ✅     |
+| Rate limiting (2s interval)                    | ✅     |
+| Toast notifications                            | ✅     |
+| Debug logging (`data/predictor.log`)           | ✅     |
+| ESLint + Prettier + husky + CI gate            | ✅     |
+| release-please + npm provenance publishing     | ✅     |
+| `autoSubmitThreshold`                          | ⬜     |
+| Graceful degrade when no model configured      | ⬜     |
+| Configurable via opencode.json options         | ⬜     |
 
 ## Design decisions
 
@@ -89,13 +100,18 @@ session.idle → extractTextMessages() → buildPredictionMessages()
 
 5. **Slash commands only**: `/pred-on` etc. via `command.execute.before` hook. No magic strings. Clean separation — commands never reach the LLM.
 
+6. **Self-contained `/pred-seed`**: reads OpenCode's own SQLite store directly, replacing a manual script that depended on `oh-my-openagent` + python. Works for any installed user.
+
 ## Verification
 
 ```bash
-npm run ci                # lint + typecheck + test (the full gate)
+npm run ci                              # lint + typecheck + test (the full gate)
 bun --bun vitest run src/seed.test.ts   # /pred-seed unit tests (need bun:sqlite)
-/pred-seed 5              # in OpenCode: seed corpus from past sessions
+opencode run "/pred-status"             # runtime: plugin loads? (no "Unexpected server error")
+opencode run "/pred-seed 5"             # runtime: corpus grows + data/predictor.log has "seed:"
 ```
+
+`npm run ci` alone is NOT sufficient for hook changes — the smoke test skips without the `opencode` binary and unit tests mock the SDK. See AGENTS.md "Verifying a change".
 
 Manual test: `/pred-on`, send a message, AI responds, check input box for ghost text.
 
