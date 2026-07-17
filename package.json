@@ -1,6 +1,6 @@
 {
   "name": "@johnny0120/opencode-user-predictor",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "OpenCode plugin that predicts your next message and shows it as ghost text — role-plays as you using your conversation history. /pred-on to enable.",
   "type": "module",
   "main": "src/index.ts",
