@@ -43,9 +43,7 @@ describe("buildPredictionMessages", () => {
   })
 
   it("trims content whitespace", () => {
-    const history = [
-      { role: "user", content: "  hello world  " },
-    ]
+    const history = [{ role: "user", content: "  hello world  " }]
     const result = buildPredictionMessages(history)
     expect(JSON.parse(result[0]!)).toEqual({ role: "self", content: "hello world" })
   })
@@ -62,18 +60,14 @@ describe("buildPredictionMessages", () => {
   })
 
   it("handles only-assistant history", () => {
-    const history = [
-      { role: "assistant", content: "solo message" },
-    ]
+    const history = [{ role: "assistant", content: "solo message" }]
     const result = buildPredictionMessages(history)
     expect(result).toHaveLength(1)
     expect(JSON.parse(result[0]!)).toEqual({ role: "others", content: "solo message" })
   })
 
   it("handles only-user history", () => {
-    const history = [
-      { role: "user", content: "solo user" },
-    ]
+    const history = [{ role: "user", content: "solo user" }]
     const result = buildPredictionMessages(history)
     expect(result).toHaveLength(1)
     expect(JSON.parse(result[0]!)).toEqual({ role: "self", content: "solo user" })
