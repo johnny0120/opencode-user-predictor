@@ -60,7 +60,9 @@ const state: PredictorState = {
   profileStats: "",
 }
 
-export { state as _state }
+/** Test-only: returns mutable state ref. NOT a Plugin hook — exported
+ *  as function to prevent "Plugin export is not a function" error. */
+export function _testState() { return state }
 
 // ---- Plugin ----
 
@@ -246,9 +248,6 @@ const predictor: Plugin = async ({ client, $ }) => {
   }
 }
 
-export { predictor as server }
-export default predictor
-
 // ---- Model Resolution ----
 
 export function resolveModel(): { providerID: string; modelID: string } | null {
@@ -335,6 +334,7 @@ function log(msg: string) {
 export function extractTextMessages(
   raw: unknown[],
 ): Array<{ role: string; content: string }> {
+  if (!Array.isArray(raw)) return []
   const result: Array<{ role: string; content: string }> = []
 
   for (const msg of raw) {
@@ -480,3 +480,6 @@ async function refreshProfile(
     : ""
   state.profileStats = summary + recent
 }
+
+export { predictor as server }
+export default predictor

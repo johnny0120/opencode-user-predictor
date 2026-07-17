@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { extractTextMessages, resolveModel, _state } from "./index"
+import { extractTextMessages, resolveModel, _testState } from "./index"
+
+const _state = _testState()
 
 describe("resolveModel", () => {
   afterEach(() => {

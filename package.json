@@ -1,6 +1,6 @@
 {
   "name": "@johnny0120/opencode-user-predictor",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "OpenCode plugin that predicts user responses using a reverse-role LLM agent",
   "type": "module",
   "main": "src/index.ts",
