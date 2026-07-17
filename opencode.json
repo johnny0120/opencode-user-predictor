@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["./src/index.ts"],
+  "command": {
+    "pred-on": {
+      "template": "/pred-on $ARGUMENTS",
+      "description": "Enable predictor, optionally with a message to the LLM"
+    },
+    "pred-off": {
+      "template": "/pred-off $ARGUMENTS",
+      "description": "Disable predictor, optionally with a message to the LLM"
+    },
+    "pred-status": {
+      "template": "/pred-status",
+      "description": "Show predictor status"
+    },
+    "pred-profile": {
+      "template": "/pred-profile",
+      "description": "Refresh user profile from current session"
+    }
+  }
+}

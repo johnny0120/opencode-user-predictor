@@ -1,0 +1,11 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# OpenCode internals
+.omo/
+.codegraph
+
+# Runtime artifacts
+data/*.log
+data/*.json
