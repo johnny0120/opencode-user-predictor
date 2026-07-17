@@ -57,7 +57,19 @@ function readTail(p: string, fromByte: number): string {
   }
 }
 
-const describeOrSkip = OPENCODE_BIN ? describe : describe.skip
+/** Is the opencode binary actually available on PATH (or OPENCODE_BIN)? */
+function opencodeAvailable(): boolean {
+  const bin = OPENCODE_BIN
+  // If it's an absolute/relative path, just check it exists; otherwise look it
+  // up on PATH via `which`. `which` is a shell builtin, so use `command -v`.
+  const r = spawnSync("sh", ["-c", `command -v ${JSON.stringify(bin)}`], { encoding: "utf8" })
+  return r.status === 0 && r.stdout.trim().length > 0
+}
+
+// Skip entirely when the opencode binary isn't installed (e.g. CI on ubuntu).
+// This is an end-to-end smoke test, not a unit test — it only meaningfully
+// runs where opencode is present (developer machines).
+const describeOrSkip = opencodeAvailable() ? describe : describe.skip
 
 describeOrSkip("opencode can start with this plugin loaded", { timeout: 60_000 }, () => {
   it("plugin loads without 'config hook failed' / 'failed to load plugin' and runs its config hook", () => {
