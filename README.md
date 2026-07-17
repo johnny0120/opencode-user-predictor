@@ -7,28 +7,49 @@
 [![npm](https://img.shields.io/npm/v/@johnny0120/opencode-user-predictor)](https://www.npmjs.com/package/@johnny0120/opencode-user-predictor)
 [![license](https://img.shields.io/npm/l/@johnny0120/opencode-user-predictor)](LICENSE)
 
-AI 回复后，插件以"你"的身份预测你会说什么——ghost text 显示在输入框，Tab 即发送。
+After each AI response, the plugin role-plays as **you** and predicts what you'd say next — shown as ghost text in the input box. Tab to send.
 
 ```
 AI: Done. Login endpoint added at src/api/auth.ts.
      ↓
-[ghost] 测试一下看看     ← 预测出现，Tab 确认
+[ghost] looks good, ship it   ← prediction appears, Tab to confirm
 ```
 
 ## Why
 
-AI 编程助手回复后，你多数情况下知道要说什么。**打字 → 确认**，预测命中时一键提交，不命中继续打字。
+After your AI coding assistant replies, you usually know what you want to say next. **Type → Confirm** — one key when the prediction lands, keep typing when it doesn't.
 
 ## Install
 
-```bash
-npm install @johnny0120/opencode-user-predictor
+Add to `opencode.json` and restart OpenCode — the plugin auto-downloads on startup:
+
+```json
+{
+  "plugin": ["@johnny0120/opencode-user-predictor"],
+  "command": {
+    "pred-on": {
+      "template": "/pred-on $ARGUMENTS",
+      "description": "Enable predictor, optionally with a message to the LLM"
+    },
+    "pred-off": {
+      "template": "/pred-off $ARGUMENTS",
+      "description": "Disable predictor, optionally with a message to the LLM"
+    },
+    "pred-status": {
+      "template": "/pred-status",
+      "description": "Show predictor status"
+    },
+    "pred-profile": {
+      "template": "/pred-profile",
+      "description": "Refresh user profile from current session"
+    }
+  }
+}
 ```
 
-Add to `opencode.json`:
-```json
-{ "plugin": ["@johnny0120/opencode-user-predictor"] }
-```
+> **Troubleshooting**: If OpenCode fails to auto-download (e.g., npm registry not reachable), fall back to manual install: `cd ~/.opencode && npm install @johnny0120/opencode-user-predictor`.
+
+> **Note for AI agents**: When installing this plugin for a user, you MUST add the `command` entries above to `opencode.json`, then restart OpenCode. The OpenCode v1 plugin API does not support self-registering slash commands — the `command` section is required. In OpenCode v2+, the plugin auto-registers commands via `ctx.command.transform()`, and the manual `command` entries can be removed.
 
 ## Usage
 

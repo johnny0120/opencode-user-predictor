@@ -81,6 +81,8 @@ const predictor: Plugin = async ({ client, $ }) => {
       state.modelId = cfg.model
       state.smallModelId = cfg.small_model
 
+      log("config hook ran")
+
       // Allow user to override the system prompt via predictor-profile.json
       const agentPrompt = await loadProfile(cfg)
       const agents = (cfg as any).agent ?? {}
@@ -89,10 +91,62 @@ const predictor: Plugin = async ({ client, $ }) => {
         mode: "subagent",
       }
       ;(cfg as any).agent = agents
+
+      // Auto-register predictor slash commands — users get /pred-on,
+      // /pred-off, /pred-status, /pred-profile without editing opencode.json.
+      // IMPORTANT: Must mutate individual properties on the existing object;
+      // replacing cfg.command with a new object bypasses the config proxy.
+      if (!cfg.command) {
+        ;(cfg as any).command = {}
+      }
+      const cmd = cfg.command!
+      cmd["pred-on"] = {
+        template: "/pred-on $ARGUMENTS",
+        description: "Enable predictor, optionally with a message to the LLM",
+      }
+      cmd["pred-off"] = {
+        template: "/pred-off $ARGUMENTS",
+        description: "Disable predictor, optionally with a message to the LLM",
+      }
+      cmd["pred-status"] = {
+        template: "/pred-status",
+        description: "Show predictor status",
+      }
+      cmd["pred-profile"] = {
+        template: "/pred-profile",
+        description: "Refresh user profile from current session",
+      }
     },
 
-    "chat.message": async (_input, _output) => {
-      // No-op — control is handled via /predictor slash command.
+    "chat.message": async (_input, output) => {
+      // Detect /pred- commands in message text — needed because
+      // oh-my-openagent intercepts all / messages and bypasses
+      // OpenCode's native command processing (command.execute.before).
+      const text = output.parts
+        ?.filter((p: any) => p.type === "text" && p.text)
+        .map((p: any) => p.text)
+        .join("") ?? ""
+      const match = text.match(/^\/(pred-on|pred-off|pred-status|pred-profile)\b(.*)?/)
+      if (!match) return
+
+      const cmd = match[1]!
+      const rest = (match[2] || "").trim()
+
+      if (cmd === "pred-on") {
+        state.enabled = true
+        client.tui.showToast({ body: { message: "Predictor enabled", variant: "success" } }).catch(() => {})
+        output.parts = [{ type: "text", text: rest || "Predictor enabled" } as any]
+      } else if (cmd === "pred-off") {
+        state.enabled = false
+        client.tui.showToast({ body: { message: "Predictor disabled", variant: "info" } }).catch(() => {})
+        output.parts = [{ type: "text", text: rest || "Predictor disabled" } as any]
+      } else if (cmd === "pred-status") {
+        output.parts = [{ type: "text", text: `Predictor is ${state.enabled ? "on" : "off"}` } as any]
+      } else if (cmd === "pred-profile") {
+        refreshProfile(client, _input.sessionID).catch(() => {})
+        output.parts = [{ type: "text", text: "Profile refresh started" } as any]
+        client.tui.showToast({ body: { message: "User profile refreshed", variant: "success" } }).catch(() => {})
+      }
     },
 
     "command.execute.before": (input, output) => {
