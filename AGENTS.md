@@ -145,9 +145,15 @@ Then check `~/.local/share/opencode/log/opencode.log` for the latest `run=` has 
   (`.github/workflows/release.yml`) generates the changelog and version bump from them.
 - On push to `main`, release-please maintains a `chore(main): release X.Y.Z` PR. **Merge that PR**
   to cut a release — it tags `vX.Y.Z` and creates the GitHub Release.
-- The `v*` tag push triggers `.github/workflows/publish.yml` → `npm publish --provenance`.
+- Publish is a **second job in the same `release.yml`**, gated on release-please's
+  `release_created` output. It checks out the tag, runs `npm run ci`, then `npm publish --provenance`.
+  Keeping publish in the release workflow (not a separate tag-triggered one) avoids the race where
+  a release-please-created tag push doesn't reliably fire a `push: tags` workflow.
 - Do NOT hand-edit `version` in `package.json` or hand-tag. The release PR does both in lockstep.
 - `prepublishOnly` runs `npm run ci`, so a manual `npm publish` can't ship untested code either.
+- If a release's publish job ever doesn't run, re-push the tag as a manual fallback:
+  `git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z` (but the in-workflow publish above
+  should make this unnecessary).
 
 ### One-time / prerequisite setup (already done — don't redo)
 
@@ -155,7 +161,7 @@ Then check `~/.local/share/opencode/log/opencode.log` for the latest `run=` has 
   Workflow permissions → "Allow GitHub Actions to create and approve pull requests" = ON.
   Without it, release-please fails with "not permitted to create pull requests".
 - **npm provenance needs repo linkage**: on npmjs.com, the package settings must link the
-  GitHub repo, or `npm publish --provenance` fails. `publish.yml` keeps `NPM_TOKEN` for auth
+  GitHub repo, or `npm publish --provenance` fails. `release.yml` keeps `NPM_TOKEN` for auth
   (provenance signs on top of it); rotating to a granular publish-only token is a TBD follow-up.
 
 ## Documentation sync

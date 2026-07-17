@@ -2,3 +2,5 @@ dist
 node_modules
 data
 package-lock.json
+# release-please owns the changelog format; don't reformat it.
+CHANGELOG.md

@@ -126,13 +126,17 @@ messages, non-text parts, `synthetic` injections, and `/`-command lines. Works f
 user — no bun/oh-my-openagent on their side. `scripts/seed-corpus.ts` deleted; `"scripts"` removed
 from `package.json` `files`.
 
-## CI/CD baseline (added 2026-07-17)
+## CI/CD baseline (added 2026-07-17, revised 2026-07-18)
 
 - `ci.yml`: runs `npm run ci` on **all branch pushes + PRs** (`permissions: contents: read`).
 - `release.yml`: **release-please** maintains a release PR on `main`; merging it bumps `package.json`
-  version, updates the changelog, tags `vX.Y.Z`, opens a GitHub Release. Requires Conventional Commits.
-- `publish.yml`: triggered by `v*` tag; runs `npm run ci` then `npm publish --provenance`
-  (`id-token: write` for OIDC signing). `NPM_TOKEN` still used for auth (rotate to granular token TBD).
+  version, updates the changelog, tags `vX.Y.Z`, opens a GitHub Release. A second job in the same
+  workflow (`if: release_created`) then checks out the tag, runs `npm run ci`, and
+  `npm publish --provenance` (`id-token: write` for OIDC signing). Requires Conventional Commits.
+- Publish is **in** `release.yml` (not a separate tag-triggered workflow) because release-please's
+  bot-created tag push doesn't reliably fire a `push: tags` workflow — that race left 0.2.0 tagged
+  but unpublished until the tag was re-pushed manually. (Resolved 2026-07-18.)
+- `NPM_TOKEN` still used for auth (rotate to granular token TBD).
 - `prepublishOnly` = `npm run ci` — local backstop so manual `npm publish` can't ship untested code.
 - **Bun note**: the OpenCode plugin host is Bun (embedded in every opencode install), so `Bun.*`
   and `bun:sqlite` are always available at runtime regardless of install method. `@types/bun` is

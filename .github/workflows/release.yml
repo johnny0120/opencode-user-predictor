@@ -5,15 +5,48 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: write # release-please creates commits, tags, releases, and the release PR
+  pull-requests: write # opens the release PR
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           release-type: node
-          # version is sourced from package.json; tags follow the v* convention
-          # that triggers .github/workflows/publish.yml.
+          # version is sourced from package.json; tags follow the v* convention.
+
+  # Publish runs ONLY when release-please actually cut a release this push
+  # (i.e. someone merged the release PR). Keeping publish in this workflow —
+  # rather than a separate tag-triggered one — avoids the release-please race
+  # where a bot-created tag push doesn't always fire a `push: tags` workflow.
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC for npm provenance signing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      # Gate the publish on the full quality suite.
+      - run: npm run ci
+      # `--provenance` cryptographically signs the publish with this workflow's
+      # OIDC identity. Requires the npm package linked to this GitHub repo
+      # (one-time setup on npmjs.com). NPM_TOKEN still used for auth.
+      - run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
