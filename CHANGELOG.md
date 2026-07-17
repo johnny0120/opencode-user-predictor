@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/johnny0120/opencode-user-predictor/compare/v0.2.0...v0.2.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* resolve VSCode 'cannot find node:/Bun/process' warnings via disjoint tsconfigs ([d9e827a](https://github.com/johnny0120/opencode-user-predictor/commit/d9e827ad34444846c92c08913fa5141784ec06ef))
+
 ## [0.2.0](https://github.com/johnny0120/opencode-user-predictor/compare/v0.1.2...v0.2.0) (2026-07-17)
 
 
