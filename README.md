@@ -42,6 +42,10 @@ Add to `opencode.json` and restart OpenCode — the plugin auto-downloads on sta
     "pred-profile": {
       "template": "/pred-profile",
       "description": "Refresh user profile from current session"
+    },
+    "pred-seed": {
+      "template": "/pred-seed $ARGUMENTS",
+      "description": "Seed user corpus from past OpenCode sessions (optional: limit)"
     }
   }
 }
@@ -53,13 +57,14 @@ Add to `opencode.json` and restart OpenCode — the plugin auto-downloads on sta
 
 ## Usage
 
-| Command | Effect |
-|---------|--------|
-| `/pred-on` | Enable predictions |
-| `/pred-on message` | Enable + send message to LLM |
-| `/pred-off` | Disable |
-| `/pred-status` | Current state |
-| `/pred-profile` | Build behavioral profile |
+| Command            | Effect                                        |
+| ------------------ | --------------------------------------------- |
+| `/pred-on`         | Enable predictions                            |
+| `/pred-on message` | Enable + send message to LLM                  |
+| `/pred-off`        | Disable                                       |
+| `/pred-status`     | Current state                                 |
+| `/pred-profile`    | Build behavioral profile from current session |
+| `/pred-seed [N]`   | Seed corpus from past sessions (default 50)   |
 
 ## How It Works
 
@@ -74,11 +79,16 @@ Profile system captures thinking patterns (scrutiny, verification instinct, UX o
 
 ```bash
 cp predictor-profile-zh.json predictor-profile.json   # switch to Chinese
-bun run scripts/seed-corpus.ts 50                       # bootstrap from history
-/pred-profile                                           # accumulate over time
 ```
 
-Edit `predictor-profile.json` to customize behavior. Restart OpenCode to apply.
+```text
+/pred-seed 50      # bootstrap corpus from past OpenCode sessions (no bun/oh-my-openagent needed)
+/pred-profile      # accumulate from the current session over time
+```
+
+`/pred-seed` reads your local OpenCode history (`~/.local/share/opencode/opencode.db`)
+directly — it works for any install, no extra tools required. Edit
+`predictor-profile.json` to customize behavior. Restart OpenCode to apply.
 
 ## License
 
