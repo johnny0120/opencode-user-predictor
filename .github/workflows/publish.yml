@@ -4,6 +4,10 @@ on:
   push:
     tags: ["v*"]
 
+permissions:
+  contents: read
+  id-token: write # OIDC for npm provenance signing
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -12,8 +16,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
-      - run: npm publish
+      # Gate the publish on the full quality suite (lint + typecheck + test).
+      - run: npm run ci
+      # `--provenance` cryptographically signs the publish with this workflow's
+      # OIDC identity. Requires the npm package to be linked to this GitHub
+      # repo (one-time setup on npmjs.com → package settings → connect repo).
+      # Auth still uses NPM_TOKEN; rotate to a granular publish-only token as a
+      # follow-up. `prepublishOnly` also runs `npm run ci` locally as a backstop.
+      - run: npm publish --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
