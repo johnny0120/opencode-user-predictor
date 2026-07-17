@@ -25,48 +25,19 @@
  */
 import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
-import {
-  USER_SIMULATOR_SYSTEM,
-  buildPredictionMessages,
-} from "./prompts"
+import { USER_SIMULATOR_SYSTEM, buildPredictionMessages } from "./prompts"
+import { state, resolveModel, extractTextMessages } from "./internals"
+import { seedCorpus } from "./seed"
 
-// Use Bun's built-in fs — available in OpenCode plugin runtime
-declare const Bun: {
-  write(path: string, data: string): Promise<number>
-  file(path: string): { text(): Promise<string> }
-}
+// NOTE: This module is the plugin entry referenced by `opencode.json`'s
+// `plugin` array. OpenCode's loader iterates `Object.values(exports)` and
+// treats EVERY exported function as a plugin. Only `server`/`default` may be
+// exported here — helpers/state live in `./internals` (see that file for why).
 
-// ---- State ----
+// Bun runtime types (Bun global + bun:sqlite) are declared in ./bun.d.ts —
+// ambient, so tsc under node can type-check without @types/bun.
 
-interface PredictorState {
-  modelId?: string
-  smallModelId?: string
-  useSmallModel: boolean
-  enabled: boolean
-  lastPredictionAt: number
-  minPredictionInterval: number
-  mainSessionID: string | null
-  predicting: boolean
-  profileStats: string
-}
-
-const state: PredictorState = {
-  useSmallModel: false,
-  enabled: false,
-  lastPredictionAt: 0,
-  minPredictionInterval: 2000,
-  mainSessionID: null,
-  predicting: false,
-  profileStats: "",
-}
-
-/** Test-only: returns mutable state ref. NOT a Plugin hook — exported
- *  as function to prevent "Plugin export is not a function" error. */
-export function _testState() { return state }
-
-// ---- Plugin ----
-
-async function loadProfile(cfg: any): Promise<string> {
+async function loadProfile(): Promise<string> {
   try {
     const custom = await Bun.file("predictor-profile.json").text()
     return JSON.parse(custom).prompt || USER_SIMULATOR_SYSTEM
@@ -77,7 +48,7 @@ async function loadProfile(cfg: any): Promise<string> {
 
 type PluginInput = Parameters<Plugin>[0]
 
-const predictor: Plugin = async ({ client, $ }) => {
+const predictor: Plugin = async ({ client }) => {
   return {
     config: async (cfg) => {
       state.modelId = cfg.model
@@ -86,20 +57,25 @@ const predictor: Plugin = async ({ client, $ }) => {
       log("config hook ran")
 
       // Allow user to override the system prompt via predictor-profile.json
-      const agentPrompt = await loadProfile(cfg)
-      const agents = (cfg as any).agent ?? {}
+      const agentPrompt = await loadProfile()
+      // OpenCode's Config type is a deep proxy; agent/command are loosely typed
+      // here because the SDK's Config/AgentConfig shapes don't expose arbitrary
+      // mutation cleanly. Cast through unknown for the interop.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SDK Config/AgentConfig mutation
+      const cfgAny = cfg as unknown as Record<string, any>
+      const agents = cfgAny.agent ?? {}
       agents._predictor = {
         prompt: agentPrompt,
         mode: "subagent",
       }
-      ;(cfg as any).agent = agents
+      cfgAny.agent = agents
 
       // Auto-register predictor slash commands — users get /pred-on,
       // /pred-off, /pred-status, /pred-profile without editing opencode.json.
       // IMPORTANT: Must mutate individual properties on the existing object;
       // replacing cfg.command with a new object bypasses the config proxy.
       if (!cfg.command) {
-        ;(cfg as any).command = {}
+        cfgAny.command = {}
       }
       const cmd = cfg.command!
       cmd["pred-on"] = {
@@ -118,6 +94,10 @@ const predictor: Plugin = async ({ client, $ }) => {
         template: "/pred-profile",
         description: "Refresh user profile from current session",
       }
+      cmd["pred-seed"] = {
+        template: "/pred-seed $ARGUMENTS",
+        description: "Seed user corpus from past OpenCode sessions (optional: limit)",
+      }
     },
 
     "chat.message": async (_input, output) => {
@@ -125,50 +105,62 @@ const predictor: Plugin = async ({ client, $ }) => {
       // oh-my-openagent intercepts all / messages and bypasses
       // OpenCode's native command processing (command.execute.before).
       const text = output.parts
-        ?.filter((p: any) => p.type === "text" && p.text)
-        .map((p: any) => p.text)
-        .join("") ?? ""
-      const match = text.match(/^\/(pred-on|pred-off|pred-status|pred-profile)\b(.*)?/)
+        ?.filter((p) => p.type === "text" && "text" in p && p.text)
+        .map((p) => ("text" in p ? p.text : ""))
+        .join("")
+        .trim()
+      if (!text) return
+      const match = text.match(/^\/(pred-on|pred-off|pred-status|pred-profile|pred-seed)\b(.*)?/)
       if (!match) return
 
       const cmd = match[1]!
       const rest = (match[2] || "").trim()
+      const toast = (message: string, variant: "success" | "info") =>
+        client.tui.showToast({ body: { message, variant } }).catch(() => {})
 
       if (cmd === "pred-on") {
         state.enabled = true
-        client.tui.showToast({ body: { message: "Predictor enabled", variant: "success" } }).catch(() => {})
-        output.parts = [{ type: "text", text: rest || "Predictor enabled" } as any]
+        toast("Predictor enabled", "success")
+        output.parts = [textPart(rest || "Predictor enabled")]
       } else if (cmd === "pred-off") {
         state.enabled = false
-        client.tui.showToast({ body: { message: "Predictor disabled", variant: "info" } }).catch(() => {})
-        output.parts = [{ type: "text", text: rest || "Predictor disabled" } as any]
+        toast("Predictor disabled", "info")
+        output.parts = [textPart(rest || "Predictor disabled")]
       } else if (cmd === "pred-status") {
-        output.parts = [{ type: "text", text: `Predictor is ${state.enabled ? "on" : "off"}` } as any]
+        output.parts = [textPart(`Predictor is ${state.enabled ? "on" : "off"}`)]
       } else if (cmd === "pred-profile") {
         refreshProfile(client, _input.sessionID).catch(() => {})
-        output.parts = [{ type: "text", text: "Profile refresh started" } as any]
-        client.tui.showToast({ body: { message: "User profile refreshed", variant: "success" } }).catch(() => {})
+        output.parts = [textPart("Profile refresh started")]
+        toast("User profile refreshed", "success")
+      } else if (cmd === "pred-seed") {
+        runSeed(client, rest)
+        output.parts = [textPart("Seed started…")]
       }
     },
 
     "command.execute.before": (input, output) => {
       const cmd = input.command
       const rest = (input.arguments ?? "").trim()
+      const toast = (message: string, variant: "success" | "info") =>
+        client.tui.showToast({ body: { message, variant } }).catch(() => {})
 
       if (cmd === "pred-on") {
         state.enabled = true
-        client.tui.showToast({ body: { message: "Predictor enabled", variant: "success" } }).catch(() => {})
-        output.parts = [{ type: "text", text: rest || "Predictor enabled" } as any]
+        toast("Predictor enabled", "success")
+        output.parts = [textPart(rest || "Predictor enabled")]
       } else if (cmd === "pred-off") {
         state.enabled = false
-        client.tui.showToast({ body: { message: "Predictor disabled", variant: "info" } }).catch(() => {})
-        output.parts = [{ type: "text", text: rest || "Predictor disabled" } as any]
+        toast("Predictor disabled", "info")
+        output.parts = [textPart(rest || "Predictor disabled")]
       } else if (cmd === "pred-status") {
-        output.parts = [{ type: "text", text: `Predictor is ${state.enabled ? "on" : "off"}` } as any]
+        output.parts = [textPart(`Predictor is ${state.enabled ? "on" : "off"}`)]
       } else if (cmd === "pred-profile") {
         refreshProfile(client, input.sessionID).catch(() => {})
-        output.parts = [{ type: "text", text: "Profile refresh started" } as any]
-        client.tui.showToast({ body: { message: "User profile refreshed", variant: "success" } }).catch(() => {})
+        output.parts = [textPart("Profile refresh started")]
+        toast("User profile refreshed", "success")
+      } else if (cmd === "pred-seed") {
+        runSeed(client, rest)
+        output.parts = [textPart("Seed started…")]
       }
       return Promise.resolve()
     },
@@ -192,9 +184,11 @@ const predictor: Plugin = async ({ client, $ }) => {
       try {
         state.predicting = true
 
-        client.tui.showToast({
-          body: { message: "Predicting...", variant: "info", duration: 3000 },
-        }).catch(() => {})
+        client.tui
+          .showToast({
+            body: { message: "Predicting...", variant: "info", duration: 3000 },
+          })
+          .catch(() => {})
 
         const response = await client.session.messages({
           path: { id: sessionID },
@@ -215,7 +209,7 @@ const predictor: Plugin = async ({ client, $ }) => {
         await client.tui.appendPrompt({ body: { text: prediction } })
         log("ghost text appended")
       } catch (err) {
-        log(`error: ${err}`)
+        log(`error: ${String(err)}`)
       } finally {
         state.predicting = false
       }
@@ -248,21 +242,6 @@ const predictor: Plugin = async ({ client, $ }) => {
   }
 }
 
-// ---- Model Resolution ----
-
-export function resolveModel(): { providerID: string; modelID: string } | null {
-  const id = state.useSmallModel
-    ? (state.smallModelId ?? state.modelId)
-    : state.modelId
-  if (!id) return null
-
-  const [providerID, ...rest] = id.split("/")
-  const modelID = rest.join("/")
-  if (!providerID || !modelID) return null
-
-  return { providerID, modelID }
-}
-
 // ---- Prediction ----
 
 /**
@@ -279,9 +258,7 @@ async function predict(
   const flipped = buildPredictionMessages(history)
   if (flipped.length === 0) return null
 
-  const messages = state.profileStats
-    ? [state.profileStats, ...flipped]
-    : flipped
+  const messages = state.profileStats ? [state.profileStats, ...flipped] : flipped
   const prompt = messages.join("\n\n")
 
   // Create fresh session
@@ -304,15 +281,17 @@ async function predict(
     if (!result.data) return null
 
     const text = (result.data.parts ?? [])
-      .filter((p: any) => p.type === "text")
-      .map((p: any) => p.text)
+      .filter((p) => p.type === "text")
+      .map((p) => (p.type === "text" ? p.text : ""))
       .join("")
       .trim()
 
-    log(`LLM CALL:\n---AGENT---\n_predictor\n---SYSTEM---\n${USER_SIMULATOR_SYSTEM}\n---INPUT---\n${prompt}\n---OUTPUT---\n${text}\n---END---`)
+    log(
+      `LLM CALL:\n---AGENT---\n_predictor\n---SYSTEM---\n${USER_SIMULATOR_SYSTEM}\n---INPUT---\n${prompt}\n---OUTPUT---\n${text}\n---END---`,
+    )
     return text || null
   } catch (err) {
-    log(`predict error: ${err}`)
+    log(`predict error: ${String(err)}`)
     return null
   } finally {
     await client.session.delete({ path: { id: sid } }).catch(() => {})
@@ -326,45 +305,52 @@ let _logQueue: Promise<void> = Promise.resolve()
 function log(msg: string) {
   const line = `[${new Date().toISOString()}] ${msg}\n`
   _logQueue = _logQueue
-    .then(() => Bun.file("data/predictor.log").text().catch(() => ""))
-    .then(prev => Bun.write("data/predictor.log", prev + line).then(() => {}))
+    .then(() =>
+      Bun.file("data/predictor.log")
+        .text()
+        .catch(() => ""),
+    )
+    .then((prev) => Bun.write("data/predictor.log", prev + line).then(() => {}))
     .catch(() => {})
 }
 
-export function extractTextMessages(
-  raw: unknown[],
-): Array<{ role: string; content: string }> {
-  if (!Array.isArray(raw)) return []
-  const result: Array<{ role: string; content: string }> = []
+/**
+ * Build a text Part for hook outputs. OpenCode's `Part` type is a broad union
+ * where every member carries id/sessionID/messageID — but the runtime accepts a
+ * bare `{type:"text", text}` and fills the rest. The hook's `output.parts` is
+ * typed `Part[]`, so we cast the bare object to `Part` (runtime-compatible).
+ */
+function textPart(text: string): import("@opencode-ai/sdk").Part {
+  return { type: "text", text } as unknown as import("@opencode-ai/sdk").Part
+}
 
-  for (const msg of raw) {
-    const m = msg as any
-    const role = m.role ?? m.info?.role
-    if (!role || role === "tool" || role === "system") continue
+// ---- Seed (bootstrap corpus from past sessions) ----
 
-    let content = ""
-    if (Array.isArray(m.parts)) {
-      for (const part of m.parts) {
-        if (
-          part.text &&
-          part.type !== "tool_call" &&
-          part.type !== "tool_result" &&
-          part.type !== "reasoning" &&
-          part.type !== "thinking"
-        ) {
-          content += part.text
-        }
-      }
-    } else if (typeof m.content === "string") {
-      content = m.content
+/**
+ * Run `/pred-seed`: pull genuine user messages from past OpenCode sessions
+ * (read directly from ~/.local/share/opencode/opencode.db via bun:sqlite) and
+ * merge them into data/user-corpus.json. Fire-and-forget; toasts progress.
+ */
+function runSeed(client: PluginInput["client"], rest: string): void {
+  const limit = parseInt(rest, 10)
+  const opts = Number.isFinite(limit) && limit > 0 ? { limit } : {}
+  const toast = (message: string, variant: "success" | "info") =>
+    client.tui.showToast({ body: { message, variant } }).catch(() => {})
+
+  toast("Seeding corpus from past sessions…", "info")
+  void (async () => {
+    try {
+      // bun:sqlite is only available in the Bun plugin host. Import lazily so
+      // the module loads under node/vitest too (where /pred-seed just no-ops).
+      const { Database } = await import("bun:sqlite")
+      const result = await seedCorpus(opts, { Database })
+      log(`seed: ${result.sessions} sessions, ${result.messages} msgs, ${result.newMessages} new`)
+      toast(`Seeded ${result.newMessages} new messages from ${result.sessions} sessions`, "success")
+    } catch (err) {
+      log(`seed error: ${String(err)}`)
+      toast(`Seed failed: ${String(err)}`, "info")
     }
-
-    if (content.trim()) {
-      result.push({ role, content: content.trim() })
-    }
-  }
-
-  return result
+  })()
 }
 
 // ---- Profile Refresh ----
@@ -376,21 +362,23 @@ interface ProfileCategory {
   instruction: string[]
 }
 
-async function refreshProfile(
-  client: PluginInput["client"],
-  sessionID: string,
-): Promise<void> {
+async function refreshProfile(client: PluginInput["client"], sessionID: string): Promise<void> {
   const response = await client.session.messages({ path: { id: sessionID } })
-  const raw = response.data ?? []
+  const raw: Array<{
+    role?: string
+    info?: { role?: string }
+    parts?: Array<{ type?: string; text?: string }>
+    content?: string
+  }> = (response.data ?? []) as unknown as Array<Record<string, unknown>>
   if (!Array.isArray(raw)) return
 
   // Read historical user corpus if available
   try {
     const corpusStr = await Bun.file("data/user-corpus.json").text()
     const corpus = JSON.parse(corpusStr)
-    for (const m of (corpus.messages ?? [])) {
+    for (const m of corpus.messages ?? []) {
       if (m.content) {
-        raw.push({ role: "user", parts: [{ type: "text", text: m.content }] } as any)
+        raw.push({ role: "user", parts: [{ type: "text", text: m.content }] })
       }
     }
   } catch {}
@@ -407,28 +395,33 @@ async function refreshProfile(
   try {
     const corpusStr = await Bun.file("data/user-corpus.json").text()
     const corpus = JSON.parse(corpusStr)
-    for (const m of (corpus.messages ?? [])) {
+    for (const m of corpus.messages ?? []) {
       categorize(m.content ?? "")
     }
   } catch {}
 
   // Append current session's user messages to corpus for future use
   try {
-    const existing = await Bun.file("data/user-corpus.json").text().catch(() => "{}")
+    const existing = await Bun.file("data/user-corpus.json")
+      .text()
+      .catch(() => "{}")
     const corpus = JSON.parse(existing)
-    const msgs = (corpus.messages ?? []) as Array<unknown>
+    const msgs = (corpus.messages ?? []) as Array<{ content?: string }>
     for (const msg of raw) {
-      const m = msg as any
+      const m = msg
       if (m.role !== "user" && m.info?.role !== "user") continue
       let content = ""
       if (Array.isArray(m.parts)) {
-        content = m.parts.filter((p: any) => p.type === "text" && p.text).map((p: any) => p.text).join("")
+        content = m.parts
+          .filter((p) => p.type === "text" && p.text)
+          .map((p) => p.text ?? "")
+          .join("")
       } else if (typeof m.content === "string") {
         content = m.content
       }
       if (content.trim()) {
         const txt = content.trim()
-        if (!msgs.some((e: any) => e.content === txt)) {
+        if (!msgs.some((e) => e.content === txt)) {
           msgs.push({ content: txt })
         }
       }
@@ -455,7 +448,7 @@ async function refreshProfile(
   }
 
   // Write to data/user-profile-raw.json
-    const output = JSON.stringify(
+  const output = JSON.stringify(
     {
       updated_at: new Date().toISOString(),
       session_id: sessionID,
@@ -475,9 +468,13 @@ async function refreshProfile(
   await Bun.write("data/user-profile-raw.json", output)
 
   const summary = `Profile: ${categories.challenge.length}C/${categories.correction.length}CR/${categories.detail.length}D/${categories.instruction.length}I`
-  const recent = categories.challenge.length > 0
-    ? ` Recent: ${categories.challenge.slice(-3).map(c => c.slice(0, 40)).join(" | ")}`
-    : ""
+  const recent =
+    categories.challenge.length > 0
+      ? ` Recent: ${categories.challenge
+          .slice(-3)
+          .map((c) => c.slice(0, 40))
+          .join(" | ")}`
+      : ""
   state.profileStats = summary + recent
 }
 
