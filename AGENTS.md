@@ -87,9 +87,13 @@ node; run it for real with `bun --bun vitest run src/seed.test.ts`.
 
 ## Type checking: two tsconfigs
 
-- `tsconfig.json` — `include: ["src"]`. This is what `npm run typecheck` and `tsc --noEmit` use. Source only.
-- `tsconfig.test.json` — extends the above, adds `test/` + `test-setup.ts` + `vitest.config.ts`, `types: ["node","vitest/globals"]`. Run via `npm run typecheck:test`. Exists so VSCode doesn't show `Cannot find name 'node:...'` warnings in test files without polluting the src config.
+VSCode assigns each file to **one** tsconfig (the nearest whose `include` covers it). The split is what makes `node:fs`, `process`, `Bun`, and vitest globals resolve cleanly in the editor without polluting the published-source config.
+
+- `tsconfig.json` — `include: ["src"]` only. No `types` field → picks up all `@types/*` incl `node`; `src/bun.d.ts` is ambient so `Bun` + `bun:sqlite` resolve under node too. This is what `npm run typecheck` / `tsc --noEmit` use. **Excludes** `test/` and `test-setup.ts` (rootDir is `src`).
+- `tsconfig.test.json` — extends the above; `include: ["test","test-setup.ts","vitest.config.ts","src/bun.d.ts"]`, `types: ["node","vitest/globals"]`, `rootDir:"."`, `noEmit`. Covers every non-`src/` TS file so VSCode has a project for them. Run via `npm run typecheck:test`.
+- The two `include` sets are **disjoint** (src vs test) so no file belongs to two projects — that's what removes the "orphaned file / no project" warnings.
 - Both must pass. `npm run ci` runs both.
+- `@types/bun` is intentionally NOT installed — `src/bun.d.ts` declares the minimal `Bun` + `bun:sqlite` surface. Don't add `@types/bun` (it would pull the real Bun types and conflict with our ambient decls).
 
 ## Debugging
 

@@ -4,8 +4,8 @@
     "rootDir": ".",
     "declaration": false,
     "noEmit": true,
-    "types": ["node", "vitest/globals"],
-    "lib": ["ESNext"]
+    "lib": ["ESNext"],
+    "types": ["node", "vitest/globals"]
   },
-  "include": ["src", "test", "test-setup.ts", "vitest.config.ts"]
+  "include": ["test", "test-setup.ts", "vitest.config.ts", "src/bun.d.ts"]
 }
