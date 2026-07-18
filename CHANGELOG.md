@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/johnny0120/opencode-user-predictor/compare/v0.2.1...v0.2.2) (2026-07-18)
+
+
+### Bug Fixes
+
+* stop predicting summaries — filter plugin chatter, persona-first prompt ([f4fceaf](https://github.com/johnny0120/opencode-user-predictor/commit/f4fceafd38c7deebfb993bf2fb413855121d0b80))
+
 ## [0.2.1](https://github.com/johnny0120/opencode-user-predictor/compare/v0.2.0...v0.2.1) (2026-07-17)
 
 
