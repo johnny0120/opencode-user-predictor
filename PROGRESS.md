@@ -87,6 +87,39 @@ session.idle → extractTextMessages() → buildPredictionMessages()
 | `autoSubmitThreshold`                          | ⬜     |
 | Graceful degrade when no model configured      | ⬜     |
 | Configurable via opencode.json options         | ⬜     |
+| Cross-session user-style memory (see Roadmap)  | ⬜     |
+
+## Roadmap
+
+### Cross-session user-style memory
+
+Today the predictor infers the user's voice **only from the current session's**
+`{"role":"self"}` messages — so style adaptation resets every new session and
+only stabilizes once enough turns accumulate. `/pred-profile` already collects
+user messages across sessions into `data/user-corpus.json` (and `/pred-seed`
+bootstraps it from history), but that corpus is only used for coarse category
+counts (`profileStats`), not for style.
+
+**Goal:** let the system prompt reflect the user's _actual_ cross-session
+style — typical length, whether they ask follow-ups, language mix, signature
+phrasings — so predictions feel right from turn one, not turn ten.
+
+**Approach (TBD):**
+
+1. Distill style signals from `data/user-corpus.json` (e.g. median message
+   length, follow-up-question rate, language ratio, frequent action verbs,
+   a few representative real messages as in-context exemplars).
+2. Inject the distilled style profile into the `_predictor` system prompt
+   (or as a preamble to the prediction input) — alongside the soul/persona,
+   not replacing it. The persona stays generic ("a sharp senior engineer");
+   the style profile is the per-user layer on top.
+3. Refresh the distillation periodically (on `/pred-profile`, or when the
+   corpus grows past a threshold) — not per prediction (cost).
+
+**Why not now:** needs a stable persona-first prompt (landed in this work)
+to layer style on top of, plus a decision on how aggressively to
+few-shot real user messages (privacy/overfitting tradeoff). Tracked here as
+the next meaningful quality leap after the persona + pollution-filter fix.
 
 ## Design decisions
 

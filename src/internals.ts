@@ -58,6 +58,31 @@ export function resolveModel(): { providerID: string; modelID: string } | null {
 
 // ---- Message Extraction ----
 
+/**
+ * Is this an assistant message that is just the predictor plugin's own
+ * command response (toggle/status/profile/seed acks)? These are not real
+ * conversational replies — feeding them to the predictor pollutes its view
+ * of "what the coding assistant said" and skews predictions toward
+ * status-reporting instead of natural next messages.
+ */
+function isPluginAck(content: string): boolean {
+  const c = content.trim()
+  if (!c) return false
+  // Exact/template acks the plugin emits via command.execute.before / chat.message.
+  const ackPatterns = [
+    /^Predictor (enabled|disabled)\b/i,
+    /^Predictor is (on|off)\b/i,
+    /^Profile refresh started\b/i,
+    /^User profile refreshed\b/i,
+    /^Seed started\b/i,
+    /^Seeded \d+ new messages\b/i,
+  ]
+  if (ackPatterns.some((re) => re.test(c))) return true
+  // oh-my-openagent wraps /pred-* in a status-check style reply.
+  if (/predictor.*currently.*(disabled|enabled)/i.test(c) && /turn it on/i.test(c)) return true
+  return false
+}
+
 export function extractTextMessages(raw: unknown[]): Array<{ role: string; content: string }> {
   if (!Array.isArray(raw)) return []
   const result: Array<{ role: string; content: string }> = []
@@ -89,9 +114,17 @@ export function extractTextMessages(raw: unknown[]): Array<{ role: string; conte
       content = m.content
     }
 
-    if (content.trim()) {
-      result.push({ role, content: content.trim() })
-    }
+    const text = content.trim()
+    if (!text) continue
+
+    // Drop /pred-* command invocations — they are plugin directives, not
+    // natural things the user would say to the assistant. (Same rule the
+    // /pred-seed corpus seeder applies.)
+    if (role === "user" && /^\/pred-(on|off|status|profile|seed)\b/i.test(text)) continue
+    // Drop the plugin's own command acks from the assistant side.
+    if (role === "assistant" && isPluginAck(text)) continue
+
+    result.push({ role, content: text })
   }
 
   return result
